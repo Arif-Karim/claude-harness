@@ -5,6 +5,15 @@ contract is [`contract.md` §6](contract.md#6-pr-ready-gate) (gates) and §7 (ri
 This page explains how to use it, and what it can't do when everyone shares one
 GitHub account.
 
+## "No code-scanning analysis for <sha>": update the branch
+
+The analysis must be of the PR's **current** merge commit. When another PR merges into the
+default branch, GitHub recomputes this PR's merge commit, but CodeQL on `pull_request` doesn't
+run on pushes to the base, and "Re-run jobs" re-analyses the **old** merge commit. So after main
+moves, gate 2 stays NOT READY until the branch is updated: merge `origin/main` into the lane
+branch (or rebase and push a new branch) and push, or use "Update branch" on GitHub. Re-running
+CodeQL won't help. In multi-lane work this happens to most open PRs after each merge.
+
 ## Exit codes and what to do
 
 | Exit | Last line | Meaning | Who acts |
@@ -40,7 +49,8 @@ be used to tell bots from people.)
 2. **Code scanning**: a code-scanning analysis must exist for the PR's **current merge commit** (`refs/pull/<n>/merge`, matching `merge_commit_sha`); otherwise "no code-scanning analysis for <sha>", NOT READY. Then 0 open alerts on `refs/pull/<n>/merge` plus `refs/pull/<n>/head`, every page. The alerts API returns an empty list for a ref nobody analysed, so without the analysis check a skipped, pending or stale scan would pass.
 3. **Bot threads**: 0 unresolved review threads started by a bot, every page.
 4. **Independent review**: a non-bot review by another login, or (mode `author-or-marker`) a non-bot review with a `harness:reviewer` marker whose id differs from the PR body's `harness:builder` id. Reviews from code scanning, Copilot or Actions never count.
-5. **Findings → fixes**: a comment starting `## Review findings → fixes`, posted strictly after the last harness review (the last non-bot review with a reviewer marker). A human's approval or a bot's review posted later doesn't reset it.
+5. **Findings → fixes**: a comment starting `## Review findings → fixes`, posted strictly after the last harness review (the last non-bot review with a reviewer marker; if no review has a marker, the last non-bot review that isn't an approval). A human's approval or a bot's review posted later doesn't reset it. **Every agent review must carry the `<!-- harness:reviewer id=… -->` marker:** once a marker review exists, a later review from the shared account without the marker is ignored by this gate, so its findings could go unanswered.
+   **Human block:** in every tier, if any human's latest `APPROVED`/`CHANGES_REQUESTED` review is `CHANGES_REQUESTED`, the PR is NOT READY (not NEEDS HUMAN) until that human approves or the review is dismissed.
 6. **Risk tier**: the tier of every changed file, including the old path of a rename, from the paginated file listing. If the tier needs a human, each human's latest decisive review (`APPROVED`, `CHANGES_REQUESTED` or `DISMISSED`; comment-only reviews don't count) must be `APPROVED`, by a non-bot login that is not the PR author.
 
 ## Single shared GitHub account: the limitation
