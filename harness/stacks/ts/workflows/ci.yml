@@ -1,4 +1,5 @@
-# TypeScript CI (template). Job names are the required checks in harness.config.json.
+# harness:managed ci (agent-harness). Job names are the required checks in harness.config.json.
+# Several stacks: harness-init merges each stack's "# >>> harness:<block>" sections into one file.
 name: ci
 
 on:
@@ -10,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -22,10 +23,13 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # >>> harness:setup-verify
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: {{TS_DIR}}/package-lock.json
+      # <<< harness:setup-verify
       - name: verify
         run: scripts/verify.sh
 
@@ -38,15 +42,22 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # >>> harness:setup-mutation
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - name: mutation test changed files
+          cache-dependency-path: {{TS_DIR}}/package-lock.json
+      - name: "ts: npm ci"
+        run: npm ci
+        working-directory: {{TS_DIR}}
+      # <<< harness:setup-mutation
+      # >>> harness:run-mutation
+      - name: "ts: mutation test changed files (Stryker)"
         env:
           BASE_REF: origin/${{ github.base_ref }}
         run: scripts/mutation-ts.sh
+      # <<< harness:run-mutation
 
   gitleaks:
     runs-on: ubuntu-latest

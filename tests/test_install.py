@@ -212,7 +212,7 @@ class GoAppTest(InstallerCase):
         cfg = self.assert_valid_config()
         self.assertEqual((cfg["coverageMin"], cfg["mutationMin"], cfg["defaultBranch"]), (80, 50, "trunk"))
         self.assertIn('branches: ["trunk"]', read(self.target, ".github/workflows/ci.yml"))
-        self.assert_idempotent()
+        self.assert_idempotent("--default-branch", "trunk")
 
     def test_dry_run_writes_nothing(self):
         before = snapshot(self.target)
@@ -283,7 +283,7 @@ class MonorepoTest(InstallerCase):
         self.assertEqual(cfg["stacks"], ["go", "ts"])
         ci = read(self.target, ".github/workflows/harness-ci.yml")
         for job in ("verify", "mutation", "gitleaks"):
-            self.assertEqual(len(re.findall(r"(?m)^  " + job + r":$", ci), 1), 1, job)
+            self.assertEqual(len(re.findall(r"(?m)^  " + job + r":$", ci)), 1, job)
         verify_job = ci.split("\n  mutation:")[0]
         self.assertIn("go-version-file: backend/go.mod", verify_job)
         self.assertIn("setup-node", verify_job)

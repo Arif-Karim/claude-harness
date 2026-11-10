@@ -1,3 +1,4 @@
+// Command goapp prints a greeting.
 package main
 
 import (

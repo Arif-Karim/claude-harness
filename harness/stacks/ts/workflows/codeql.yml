@@ -1,4 +1,5 @@
-# CodeQL SAST (template). pr-ready.sh requires 0 open alerts on the PR's merge and head refs.
+# harness:managed codeql (agent-harness). pr-ready.sh requires 0 open alerts on the PR's merge and head refs.
+# Several stacks: harness-init merges each stack's "# >>> harness:<block>" sections into one file.
 name: codeql
 
 on:
@@ -13,7 +14,7 @@ permissions:
   security-events: write
 
 concurrency:
-  group: codeql-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -24,19 +25,25 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - language: javascript-typescript
-            build-mode: none
           - language: actions
             build-mode: none
+          # >>> harness:codeql-matrix
+          - language: javascript-typescript
+            build-mode: none
+          # <<< harness:codeql-matrix
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # >>> harness:codeql-setup
+      # <<< harness:codeql-setup
       - uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
           queries: security-extended
+      # >>> harness:codeql-build
+      # <<< harness:codeql-build
       - uses: github/codeql-action/analyze@v4
         with:
           category: /language:${{ matrix.language }}

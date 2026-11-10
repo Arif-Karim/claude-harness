@@ -1,4 +1,5 @@
-# Go CI (template). Job names are the required checks in harness.config.json.
+# harness:managed ci (agent-harness). Job names are the required checks in harness.config.json.
+# Several stacks: harness-init merges each stack's "# >>> harness:<block>" sections into one file.
 name: ci
 
 on:
@@ -10,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -22,28 +23,36 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # >>> harness:setup-verify
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version-file: {{GO_DIR}}/go.mod
+          cache-dependency-path: {{GO_DIR}}/go.sum
+      # <<< harness:setup-verify
       - name: verify
         run: scripts/verify.sh
 
   mutation:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
+      # >>> harness:setup-mutation
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
-      - name: mutation test changed packages
+          go-version-file: {{GO_DIR}}/go.mod
+          cache-dependency-path: {{GO_DIR}}/go.sum
+      # <<< harness:setup-mutation
+      # >>> harness:run-mutation
+      - name: "go: mutation test changed packages (gremlins)"
         env:
           BASE_REF: origin/${{ github.base_ref }}
         run: scripts/mutation-go.sh
+      # <<< harness:run-mutation
 
   gitleaks:
     runs-on: ubuntu-latest
