@@ -1,3 +1,4 @@
+# golangci-lint v2 config (installed by agent-harness; run by scripts/verify.d/20-go.sh).
 version: "2"
 linters:
   enable:
@@ -8,6 +9,11 @@ linters:
     - staticcheck
     - unused
     - ineffassign
+  exclusions:
+    rules:
+      # Tests may use weak randomness and ignore some errors on purpose.
+      - path: _test\.go
+        linters: [gosec, errcheck]
 formatters:
   enable:
     - gofmt

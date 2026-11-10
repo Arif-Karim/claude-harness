@@ -1,0 +1,8 @@
+{
+  "permissions": { "allow": ["Bash(npm test:*)"] },
+  "hooks": {
+    "PostToolUse": [
+      { "matcher": "Edit", "hooks": [{ "type": "command", "command": "npx prettier --write ." }] }
+    ]
+  }
+}

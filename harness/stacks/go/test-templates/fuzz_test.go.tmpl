@@ -7,7 +7,8 @@ import "testing"
 // `go test -fuzz=Fuzz{{FUNC}} -fuzztime=30s` explores new inputs, and any
 // failing input is saved under testdata/fuzz/ and becomes a permanent test.
 func Fuzz{{FUNC}}(f *testing.F) {
-	// Seeds: typical, empty, boundary and previously-buggy inputs.
+	// Seed corpus: typical, empty, boundary and previously-buggy inputs. Failures the
+	// fuzzer finds are saved under testdata/fuzz/Fuzz{{FUNC}}/; commit them.
 	f.Add("")
 	f.Add("typical input")
 	f.Add("\x00\xff unicode ✓")

@@ -1,4 +1,5 @@
-# CodeQL SAST (template). pr-ready.sh requires 0 open alerts on the PR's merge and head refs.
+# harness:managed codeql (agent-harness). pr-ready.sh requires 0 open alerts on the PR's merge and head refs.
+# Several stacks: harness-init merges each stack's "# >>> harness:<block>" sections into one file.
 name: codeql
 
 on:
@@ -13,7 +14,7 @@ permissions:
   security-events: write
 
 concurrency:
-  group: codeql-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -24,23 +25,33 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - language: go
-            build-mode: autobuild
           - language: actions
             build-mode: none
+          # >>> harness:codeql-matrix
+          - language: go
+            build-mode: manual
+          # <<< harness:codeql-matrix
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # >>> harness:codeql-setup
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         if: matrix.language == 'go'
         with:
-          go-version-file: go.mod
+          go-version-file: {{GO_DIR}}/go.mod
+      # <<< harness:codeql-setup
       - uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
           queries: security-extended
+      # >>> harness:codeql-build
+      - name: "go: build for CodeQL"
+        if: matrix.language == 'go'
+        working-directory: {{GO_DIR}}
+        run: go build ./...
+      # <<< harness:codeql-build
       - uses: github/codeql-action/analyze@v4
         with:
           category: /language:${{ matrix.language }}

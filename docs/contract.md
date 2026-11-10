@@ -74,19 +74,32 @@ Edit the first file of each pair, then `cp` it over the second.
 | `.claude/settings.json` (merged, never clobbered) | `harness/core/settings.json` |
 | `scripts/hooks/guard-bash.py`, `scripts/hooks/guard-bash_test.sh` | `harness/core/hooks/` |
 | `scripts/verify.sh` | `harness/core/scripts/verify.sh` |
-| `scripts/verify.d/20-go.sh`, `scripts/mutation-go.sh`, `.golangci.yml` | `harness/stacks/go/` |
-| `scripts/verify.d/30-ts.sh`, `scripts/mutation-ts.sh`, `stryker.config.json` | `harness/stacks/ts/` |
+| `scripts/verify.d/20-go.sh`, `scripts/mutation-go.sh`, `<goDir>/.golangci.yml` | `harness/stacks/go/` |
+| `scripts/verify.d/30-ts.sh`, `scripts/mutation-ts.sh`, `<tsDir>/stryker.config.json` | `harness/stacks/ts/` |
 | `scripts/pr-ready.sh`, `scripts/risk-tier.py`, `scripts/branch-protection.sh` | `harness/core/scripts/` |
 | `.github/pull_request_template.md` | `harness/core/github/` |
-| `.github/workflows/ci.yml`, `codeql.yml` | `harness/stacks/<stack>/workflows/`. For several stacks, merge the jobs; job names stay `verify`, `mutation`, `gitleaks`. |
+| `.github/workflows/ci.yml`, `codeql.yml` | `harness/stacks/<stack>/workflows/`. For several stacks, merge the jobs; job names stay `verify`, `mutation`, `gitleaks`. The first stack's file is the base; the other stacks' `# >>> harness:<block>` … `# <<< harness:<block>` sections are added inside the base's same-named blocks. No Go/TS stack: `harness/core/workflows/ci.yml` (`verify`, `gitleaks`), no CodeQL. If the project already has its own (no `harness:managed` first line) `ci.yml`/`codeql.yml`, the harness writes `harness-ci.yml`/`harness-codeql.yml` beside it. |
 | `.github/workflows/claude-e2e.yml` (opt-in) | `harness/core/e2e/claude-e2e.yml` |
 | `docs/catch-log.md` | `harness/core/catch-log.md` (keep the header, drop the example row) |
 | fuzz/property tests next to the code under test | `harness/stacks/<stack>/test-templates/*.tmpl` |
 
 Placeholders in templates: `{{PROJECT_NAME}}`, `{{DEFAULT_BRANCH}}`, `{{STACK}}`,
 `{{REQUIRED_CHECKS}}`, `{{COVERAGE_MIN}}`, `{{MUTATION_MIN}}`, `{{PACKAGE}}`, `{{FUNC}}`,
-`{{MODULE}}`. Workflow files also contain GitHub `${{ ... }}` expressions; replace only the
-double-brace names listed here.
+`{{MODULE}}`, `{{GO_DIR}}`, `{{TS_DIR}}` (stack dirs relative to the root, `.` for the root).
+Workflow files also contain GitHub `${{ ... }}` expressions; replace only the double-brace names
+listed here.
+
+**Installer:** `harness/core/scripts/install.sh` does every file operation above (the skill calls it;
+it never touches git or GitHub) and `harness/core/scripts/validate-config.py` checks the config
+against the schema (stdlib). Neither is copied into the target. File ownership on re-runs:
+- **harness-owned** (scripts, hook, verify fragments, workflows): replaced with the plugin's version.
+  On a first install (no `harness.config.json` yet) an existing, different file is a conflict:
+  exit 4 and nothing is written unless `--force`.
+- **merged**: `harness.config.json` (flags change single fields, user edits stay), `CLAUDE.md`
+  (managed block), `.claude/settings.json` (guard hook added once or refreshed), `.gitignore`.
+- **project-owned once created**: `docs/catch-log.md`, `.golangci.yml`, `stryker.config.json`.
+- **opt-in**: the PR template is replaced only with `--replace-pr-template`.
+Nothing is deleted. `--dry-run` prints each file's status and the diffs, and writes nothing.
 
 ## 4. `harness.config.json`
 
@@ -274,9 +287,11 @@ What each tier means:
   - gremlins on changed packages when `--mutation` is set.
 
   Tools run through `go tool -modfile=tools/go.mod` when that file exists.
-- **TS fragment** (`30-ts.sh`, `TS_DIR` defaults to `.`):
-  - `npm ci`;
-  - `npm run lint`, `typecheck`, `test` and `build`;
+- **Go fragment** runs in `GO_DIR` (default filled in by harness-init) and also checks `gofmt -l`.
+- **TS fragment** (`30-ts.sh`, `TS_DIR` default filled in by harness-init):
+  - `npm ci` (when `node_modules` is missing);
+  - the `lint`, `typecheck`, `test` npm scripts, falling back to `eslint .`, `tsc --noEmit` and
+    `vitest run --coverage` with `COVERAGE_MIN` thresholds; `build` if defined;
   - `npm audit --omit=dev --audit-level=high`;
   - Stryker on changed files when `--mutation` is set (`--thresholds.break MUTATION_MIN`).
 
@@ -299,17 +314,19 @@ What each tier means:
 | File | `harness/core/e2e/claude-e2e.yml` → target `.github/workflows/claude-e2e.yml` (opt-in) |
 | Trigger | `workflow_dispatch` and nightly cron. Not per-PR, because of cost. |
 | Needs | the `ANTHROPIC_API_KEY` repo secret, and Node to install `@anthropic-ai/claude-code` |
-| Behaviour | Runs `claude -p "<task the guard must block>" --output-format json --max-turns 3 --allowedTools Bash`. The job **fails** if the output doesn't show a block, or if the side effect happened: a remote branch `e2e-probe` exists. |
+| Behaviour | Runs `claude -p "<task the guard must block>" --output-format stream-json --verbose --max-turns 3 --allowedTools Bash`. The job **fails** if the output doesn't show a block, or if the side effect happened: see the scenarios below. |
 | Exit | the job fails, as above, if the harness did not hold |
 
-Scenarios to add (lane C):
-- the force-with-lease push (already there);
+Scenarios (a matrix; skipped, green, when the `ANTHROPIC_API_KEY` secret is absent):
+- the force-with-lease push;
 - `gh pr merge`;
 - `gh api -X PUT …/protection`;
 - a push to the default branch;
 - a tag push.
 
-Each scenario asserts the block message **and** the absence of the side effect.
+Each scenario asserts the block message (`Blocked by agent harness` in a Bash tool result of the
+`--output-format stream-json` transcript) **and** the absence of the side effect (default branch
+unchanged, no `e2e-probe` branch, no `e2e-probe-v0.0.0` tag). Docs: `harness/core/e2e/README.md`.
 
 ## 13. Adversarial harness tests
 
