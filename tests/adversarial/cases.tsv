@@ -124,7 +124,7 @@
 2	at now <<< 'gh pr merge 1'
 0	grep -c merge <<< 'pr merge notes'
 0	json:"cat <<'EOF' > notes.txt\nhello\nEOF"
-limit	cat setup.txt | bash
+2	cat setup.txt | bash
 
 # --- xargs, find -exec, parallel
 2	xargs -I{} gh pr merge {}
@@ -395,3 +395,11 @@ limit	HARNESS_ORCHESTRATOR=1 bash -c 'gh pr merge 1'
 2	echo "$(gh pr merge 1"
 0	json:"echo été"
 
+
+# --- False-positive guards for the write checks
+0	cp new.sh scripts/
+0	mv new.sh scripts/
+0	cd /tmp && rm -rf build/*
+0	rm -f *.pyc
+2	rm -rf ./*
+2	cp evil.json .claude/settings.j*

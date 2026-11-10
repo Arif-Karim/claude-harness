@@ -24,6 +24,8 @@ in a plugin triggers a `claude plugin validate` warning.)
 - `scripts/verify.sh`: everything CI runs (shellcheck, unittests, guard table test,
   manifest checks, `claude plugin validate --strict`, gitleaks). **Must pass before you open a PR.**
 - `tests/guard-bash_test.sh`: the guard table test alone.
+- `tests/adversarial/run.py`: the adversarial guard suite (`tests/adversarial/cases.tsv`); its accepted
+  limits and their backstops are in `docs/threat-model.md`.
 - `python3 harness/core/scripts/risk-tier.py --config harness.config.json < files`: tier of a change.
 
 ## Engineering rules
