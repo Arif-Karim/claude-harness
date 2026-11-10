@@ -47,17 +47,29 @@ def glob_match(glob, path):
 
 
 def _tier(value):
-    if value not in TIERS:
+    if not isinstance(value, str) or value not in TIERS:
         raise ValueError(f"unknown tier {value!r} (want one of {', '.join(TIERS)})")
     return TIERS.index(value)
 
 
+def _rules(rt):
+    rules = rt.get("rules", [])
+    if not isinstance(rules, list):
+        raise ValueError("riskTiers.rules must be a list")
+    out = []
+    for r in rules:
+        if not isinstance(r, dict) or not isinstance(r.get("glob"), str) or not r["glob"]:
+            raise ValueError(f"bad riskTiers rule {r!r} (want {{glob: string, tier: string}})")
+        out.append((r["glob"], _tier(r.get("tier"))))
+    return out
+
+
 def tier_for(config, files):
-    rt = config.get("riskTiers")
+    rt = config.get("riskTiers") if isinstance(config, dict) else None
     if not isinstance(rt, dict) or "default" not in rt:
         raise ValueError("riskTiers.default is required")
     default = _tier(rt["default"])
-    rules = [(r["glob"], _tier(r["tier"])) for r in rt.get("rules", [])]
+    rules = _rules(rt)
     best = None
     for f in files:
         matched = [t for g, t in rules if glob_match(g, f)]
@@ -74,7 +86,9 @@ def main(argv):
     try:
         with open(args.config, encoding="utf-8") as f:
             config = json.load(f)
-        files = args.files or [ln.strip() for ln in sys.stdin if ln.strip()]
+        # Paths are taken verbatim (only the line ending is dropped): trimming spaces
+        # could turn "a.md " into "a.md" and lower its tier.
+        files = args.files or [ln.rstrip("\r\n") for ln in sys.stdin if ln.rstrip("\r\n")]
         print(tier_for(config, files))
     except (OSError, ValueError, KeyError, TypeError) as e:
         print(f"risk-tier: {e}", file=sys.stderr)

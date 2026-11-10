@@ -9,30 +9,39 @@
 #   --check may repeat; defaults to harness.config.json requiredChecks.
 #   --branch defaults to harness.config.json defaultBranch, then the repo default branch.
 #   --dry-run prints the API payload and changes nothing (no override needed).
+# Env:  HARNESS_CONFIG (default: harness.config.json at the repo root; if set, the file must exist)
 # Exit: 0 applied (or printed) | 1 gh/API failure | 2 usage or config error | 3 refused (no HARNESS_ORCHESTRATOR=1)
 set -euo pipefail
 repo="" branch="" dry=0 checks=()
+usage() { echo "branch-protection: $*" >&2; exit 2; }
+need() { [[ $# -ge 2 && -n "$2" ]] || usage "$1 needs a value"; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --repo) repo="${2:?--repo needs a value}"; shift 2 ;;
-    --branch) branch="${2:?--branch needs a value}"; shift 2 ;;
-    --check) checks+=("${2:?--check needs a value}"); shift 2 ;;
+    --repo) need "$@"; repo="$2"; shift 2 ;;
+    --branch) need "$@"; branch="$2"; shift 2 ;;
+    --check) need "$@"; checks+=("$2"); shift 2 ;;
     --dry-run) dry=1; shift ;;
     -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
-    *) echo "branch-protection: unknown argument: $1" >&2; exit 2 ;;
+    *) usage "unknown argument: $1" ;;
   esac
 done
 
-root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-config="${HARNESS_CONFIG:-$root/harness.config.json}"
+if [[ -n "${HARNESS_CONFIG:-}" ]]; then
+  config="$HARNESS_CONFIG"
+  [[ -f "$config" ]] || usage "HARNESS_CONFIG=$config not found"
+else
+  config="$(git rev-parse --show-toplevel 2>/dev/null || pwd)/harness.config.json"
+fi
 if [[ -f "$config" ]]; then
-  jq -e . "$config" >/dev/null || { echo "branch-protection: $config is not valid JSON" >&2; exit 2; }
+  jq -e . "$config" >/dev/null 2>&1 || usage "$config is not valid JSON"
+  jq -e '(.requiredChecks // []) | type == "array" and all(type == "string")' "$config" >/dev/null \
+    || usage "$config: requiredChecks must be a list of strings"
   [[ -n "$branch" ]] || branch="$(jq -r '.defaultBranch // ""' "$config")"
   if [[ ${#checks[@]} -eq 0 ]]; then
     while IFS= read -r c; do [[ -n "$c" ]] && checks+=("$c"); done < <(jq -r '.requiredChecks[]?' "$config")
   fi
 fi
-[[ ${#checks[@]} -gt 0 ]] || { echo "branch-protection: no required checks (use --check or harness.config.json)" >&2; exit 2; }
+[[ ${#checks[@]} -gt 0 ]] || usage "no required checks (use --check or harness.config.json)"
 
 payload="$(printf '%s\n' "${checks[@]}" | jq -R . | jq -s '{
   required_status_checks: {strict: true, checks: map({context: .})},
