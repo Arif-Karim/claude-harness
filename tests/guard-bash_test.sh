@@ -98,6 +98,39 @@ check 2 'echo "$(gh pr merge 3)"'
 # shellcheck disable=SC2016
 check 2 'echo `gh pr merge 3`'
 
+# --- Adversarial hardening (tests/adversarial/cases.tsv has the full table).
+check 2 "\$'gh' pr merge 1"
+# shellcheck disable=SC2016
+check 2 'x=gh; $x pr merge 1'
+check 2 $'gh pr \\\nmerge 1'
+check 2 'echo a#b; gh pr merge 1'
+check 2 'if true; then gh pr merge 1; fi'
+check 2 'f(){ gh pr merge 1; }; f'
+check 2 'timeout 30 gh pr merge 1'
+check 2 "bash <<< 'gh pr merge 1'"
+check 2 "echo 'gh pr merge 1' | sh"
+check 2 "echo 'pr merge 1' | xargs gh"
+check 2 "python3 -c 'import os; os.system(\"gh pr merge 1\")'"
+check 2 "printf 'gh pr merge 1' > m.sh && bash m.sh"
+check 2 "git -c alias.p=push p origin main"
+check 2 'git config core.hooksPath .githooks'
+check 2 'git push origin lane-a:refs/heads//main'
+check 2 "git push origin 'refs/heads/*:refs/heads/*'"
+check 2 'git push origin --force-w lane-a'
+check 2 'git send-pack --force origin lane-a'
+check 2 'gh pr --repo o/r merge 1'
+check 2 'gh release new v1'
+check 2 'curl -X PUT https://api.github.com/repos/o/r/pulls/1/merge'
+check 2 "echo 'gh pr merge 1' > .git/hooks/pre-push"
+check 2 "sed -i 's/guard-bash/true/' .claude/settings.json"
+check 2 'echo x > scripts/hooks/guard-bash.py'
+check 2 'rm -rf .claude'
+check 0 'echo hi # gh pr merge 1'
+check 0 'cp scripts/guard-bash.py harness/core/hooks/guard-bash.py'
+check 0 'curl -s https://api.github.com/repos/o/r/pulls/1'
+check 0 'echo 3 | xargs gh pr view'
+check 0 "python3 -c 'print(1 + 1)'"
+
 # --- Default branch comes from harness.config.json.
 check_trunk 2 'git push origin trunk'
 check_trunk 2 'git push origin HEAD:refs/heads/trunk'
