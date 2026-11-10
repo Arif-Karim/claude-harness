@@ -42,8 +42,27 @@ class ParsingTest(unittest.TestCase):
         self.assertEqual(list(guard.segments("echo 'a && b'")), [["echo", "a && b"]])
 
     def test_substitutions(self):
-        self.assertEqual(list(guard.substitutions("echo $(a $(b)) `c`")), ["c", "a $(b)", "b"])
-        self.assertEqual(list(guard.substitutions("echo $(unclosed")), ["unclosed"])
+        _, subs = guard.lex("echo $(a $(b)) `c` <(d)")
+        self.assertEqual([t for t, _ in subs], ["a $(b)", "c", "d"])
+        with self.assertRaises(guard.ParseError):
+            guard.lex("echo $(unclosed")
+
+    def test_comments_only_at_word_start(self):
+        self.assertEqual(list(guard.segments("echo a#b; gh x # c\nls")), [["echo", "a#b"], ["gh", "x"], ["ls"]])
+
+    def test_quotes_escapes_and_continuations(self):
+        self.assertEqual(list(guard.segments("$'\\x67h' g\"h\" \\gh pr \\\nmerge")), [["gh", "gh", "gh", "pr", "merge"]])
+
+    def test_dynamic_words(self):
+        dyn = {w.text: w.dynamic for w in guard.words("a $x \"$y\" '$z' * {a,b} {} $'q'")}
+        self.assertEqual(dyn, {"a": False, "$x": True, "$y": True, "$z": False, "*": True,
+                               "{a,b}": True, "{}": True, "q": False})
+
+    def test_redirections_and_heredocs(self):
+        segs, _ = guard.lex("cat >out 2>&1 <<'EOF'\nbody $(x)\nEOF\nls")
+        self.assertEqual([(op, w.text) for op, w in segs[0].redirs], [(">", "out"), (">&", "1"), ("<<", "EOF")])
+        self.assertEqual(segs[0].bodies, ["body $(x)"])
+        self.assertEqual([w.text for w in segs[1].words], ["ls"])
 
     def test_tag_names(self):
         for name, want in [
