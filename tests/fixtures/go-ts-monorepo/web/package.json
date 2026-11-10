@@ -1,0 +1,6 @@
+{
+  "name": "web",
+  "private": true,
+  "type": "module",
+  "devDependencies": { "typescript": "^5.6.0" }
+}
