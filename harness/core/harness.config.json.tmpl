@@ -1,0 +1,26 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Arif-Karim/claude-harness/main/harness/core/harness.config.schema.json",
+  "version": 1,
+  "stacks": ["{{STACK}}"],
+  "defaultBranch": "{{DEFAULT_BRANCH}}",
+  "requiredChecks": ["verify", "mutation", "gitleaks"],
+  "riskTiers": {
+    "default": "standard",
+    "rules": [
+      { "glob": "docs/**", "tier": "fast" },
+      { "glob": "**/*.md", "tier": "fast" },
+      { "glob": ".github/**", "tier": "sensitive" },
+      { "glob": ".claude/**", "tier": "sensitive" },
+      { "glob": "scripts/hooks/**", "tier": "sensitive" },
+      { "glob": "harness.config.json", "tier": "sensitive" },
+      { "glob": "**/auth/**", "tier": "sensitive" },
+      { "glob": "**/migrations/**", "tier": "sensitive" }
+    ]
+  },
+  "review": {
+    "independence": "author-or-marker",
+    "humanApprovalTiers": ["sensitive"]
+  },
+  "coverageMin": 70,
+  "mutationMin": 60
+}

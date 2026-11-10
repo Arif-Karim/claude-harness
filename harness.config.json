@@ -1,0 +1,67 @@
+{
+  "$schema": "./harness/core/harness.config.schema.json",
+  "version": 1,
+  "stacks": [
+    "other"
+  ],
+  "defaultBranch": "main",
+  "requiredChecks": [
+    "verify",
+    "gitleaks"
+  ],
+  "riskTiers": {
+    "default": "standard",
+    "rules": [
+      {
+        "glob": "docs/**",
+        "tier": "fast"
+      },
+      {
+        "glob": "**/*.md",
+        "tier": "fast"
+      },
+      {
+        "glob": "skills/**",
+        "tier": "standard"
+      },
+      {
+        "glob": "harness/**",
+        "tier": "standard"
+      },
+      {
+        "glob": "scripts/guard-bash.py",
+        "tier": "sensitive"
+      },
+      {
+        "glob": "harness/core/hooks/**",
+        "tier": "sensitive"
+      },
+      {
+        "glob": "hooks/**",
+        "tier": "sensitive"
+      },
+      {
+        "glob": ".claude-plugin/**",
+        "tier": "sensitive"
+      },
+      {
+        "glob": ".claude/**",
+        "tier": "sensitive"
+      },
+      {
+        "glob": ".github/**",
+        "tier": "sensitive"
+      },
+      {
+        "glob": "harness.config.json",
+        "tier": "sensitive"
+      }
+    ]
+  },
+  "review": {
+    "independence": "author-or-marker",
+    "humanApprovalTiers": [
+      "sensitive"
+    ]
+  }
+}

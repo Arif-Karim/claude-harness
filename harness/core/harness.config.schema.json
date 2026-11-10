@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Arif-Karim/claude-harness/harness/core/harness.config.schema.json",
+  "title": "harness.config.json",
+  "description": "Per-project agent harness configuration, written by the harness-init skill at the project root.",
+  "type": "object",
+  "required": ["version", "stacks", "defaultBranch", "requiredChecks", "riskTiers", "review"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 1 },
+    "stacks": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["go", "ts", "python", "other"] }
+    },
+    "defaultBranch": { "type": "string", "minLength": 1 },
+    "requiredChecks": {
+      "description": "Status check names (CI job names) that branch protection requires and pr-ready.sh insists on.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "riskTiers": {
+      "type": "object",
+      "required": ["default", "rules"],
+      "additionalProperties": false,
+      "properties": {
+        "default": { "$ref": "#/$defs/tier" },
+        "rules": {
+          "description": "Every changed file takes the highest tier of all rules whose glob matches it, or the default. A PR takes the highest tier of its files.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["glob", "tier"],
+            "additionalProperties": false,
+            "properties": {
+              "glob": { "type": "string", "minLength": 1 },
+              "tier": { "$ref": "#/$defs/tier" }
+            }
+          }
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "required": ["independence"],
+      "additionalProperties": false,
+      "properties": {
+        "independence": {
+          "description": "author-or-marker: a review counts if its GitHub author differs from the PR author, or its harness:reviewer marker id differs from the PR's harness:builder marker id.",
+          "enum": ["author-or-marker", "author"]
+        },
+        "humanApprovalTiers": {
+          "description": "Tiers that need an APPROVED review from a human (non-bot, not the PR author). Default [\"sensitive\"].",
+          "type": "array",
+          "items": { "$ref": "#/$defs/tier" }
+        }
+      }
+    },
+    "coverageMin": { "type": "number", "minimum": 0, "maximum": 100 },
+    "mutationMin": { "type": "number", "minimum": 0, "maximum": 100 }
+  },
+  "$defs": {
+    "tier": { "enum": ["fast", "standard", "sensitive"] }
+  }
+}
