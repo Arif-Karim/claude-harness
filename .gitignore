@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.DS_Store
+coverage.out
+node_modules/
+.claude/settings.local.json

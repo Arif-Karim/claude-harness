@@ -1,0 +1,11 @@
+{
+  "name": "agent-harness",
+  "displayName": "Agent Harness",
+  "version": "0.1.0",
+  "description": "Guardrails for shipping fast with AI agents: orchestrator/builder/reviewer workflow, risky-command guard hook, merge gate, CI and branch protection, adapted to your stack by the harness-init skill.",
+  "author": { "name": "Arif Karim", "url": "https://github.com/Arif-Karim" },
+  "homepage": "https://github.com/Arif-Karim/claude-harness",
+  "repository": "https://github.com/Arif-Karim/claude-harness",
+  "license": "MIT",
+  "keywords": ["harness", "guardrails", "ci", "code-review", "agents", "tdd"]
+}

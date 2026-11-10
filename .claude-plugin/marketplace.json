@@ -1,0 +1,13 @@
+{
+  "name": "claude-harness",
+  "description": "Marketplace for the agent-harness plugin: guardrails for shipping fast with AI agents.",
+  "owner": { "name": "Arif Karim", "url": "https://github.com/Arif-Karim" },
+  "plugins": [
+    {
+      "name": "agent-harness",
+      "source": "./",
+      "description": "Orchestrator/builder/reviewer workflow, risky-command guard, merge gate, CI and branch protection for your stack.",
+      "category": "development"
+    }
+  ]
+}
