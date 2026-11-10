@@ -6,7 +6,8 @@
 #   3. 0 unresolved review threads started by bots
 #   4. an independent, non-bot review exists (author differs from the PR author, or its
 #      harness:reviewer marker id differs from the PR body's harness:builder marker id)
-#   5. a "## Review findings → fixes" comment was posted after the last harness (marker) review
+#   5. a "## Review findings → fixes" comment was posted after the last harness (marker) review,
+#      and no human's latest decisive review is CHANGES_REQUESTED (any tier)
 #   6. the risk tier of every changed file (renames: old and new path) decides whether a human's
 #      latest decisive review must be APPROVED (bots, by REST user.type, never count)
 # Any gh/API failure prints NOT READY rather than passing silently. The verdict is for the head
@@ -82,7 +83,8 @@ if [[ "$merge_sha" =~ ^[0-9a-f]{40}$ ]]; then
   analyses="$(gh api --paginate "repos/$repo/code-scanning/analyses?ref=refs/pull/$n/merge&per_page=100" \
     --jq "[.[] | select(.commit_sha == \"$merge_sha\")] | length" | awk '{s+=$1} END {print s+0}')"
   [[ "$analyses" -gt 0 ]] && pass "code-scanning analysis for merge commit $merge_sha" \
-    || miss "no code-scanning analysis for $merge_sha (refs/pull/$n/merge)"
+    || miss "no code-scanning analysis for $merge_sha (refs/pull/$n/merge). If CodeQL already ran on this head," \
+      "main moved: update the branch (merge origin/main and push); re-running CodeQL won't help"
 else
   miss "no merge commit for PR #$n (conflicts, or GitHub has not computed it yet)"
 fi
@@ -133,6 +135,15 @@ else
   [[ "$final" -gt 0 ]] && pass "'## Review findings → fixes' comment after the last review ($last_review)" \
     || miss "no '## Review findings → fixes' comment after the last review ($last_review)"
 fi
+
+# 5b. no human blocks it: in every tier, a non-bot reviewer (other than the PR author) whose latest
+# APPROVED / CHANGES_REQUESTED review is CHANGES_REQUESTED makes the PR NOT READY.
+blockers="$(jq -r '.author as $pa
+  | [.reviews[] | select(.bot | not) | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED")
+     | select((.login // "") as $l | $l != "" and $l != $pa)]
+  | group_by(.login) | map(max_by(.at)) | map(select(.state == "CHANGES_REQUESTED") | .login) | join(", ")' <<<"$pr")"
+[[ -z "$blockers" ]] && pass "no outstanding changes requested by a human" \
+  || miss "changes requested by $blockers (their latest decisive review)"
 
 # 6. risk tier → human approval
 # Every changed file, from the paginated REST listing (gh pr view stops at 100 files), plus the

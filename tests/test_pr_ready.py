@@ -308,7 +308,7 @@ CASES = [
     ("sensitive tier, approval later replaced by changes requested",
      mod(files=SENSITIVE, reviews=[review(), HUMAN_OK, review(login="the-human", state="CHANGES_REQUESTED",
                                                               body="no", at="2026-11-10T12:30:00Z")]),
-     3, ["NEEDS HUMAN"]),
+     1, ["changes requested by the-human", "NOT READY"]),  # M2: a human block wins over NEEDS HUMAN
     ("sensitive tier, later comment-only review keeps approval",
      mod(files=SENSITIVE, reviews=[review(), HUMAN_OK, review(login="the-human", body="one more",
                                                               at="2026-11-10T12:30:00Z")]), 0, ["READY"]),
