@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # Table test for the guard hook: feeds Claude Code PreToolUse JSON on stdin and
 # checks the exit code (2 = blocked, 0 = allowed).
-# Usage: tests/guard-bash_test.sh [path/to/guard-bash.py]
+# Usage: guard-bash_test.sh [path/to/guard-bash.py]
+# Default: guard-bash.py next to this script (target projects: scripts/hooks/),
+# else scripts/guard-bash.py one level up (this repo: tests/ -> scripts/).
 set -euo pipefail
-root="$(cd "$(dirname "$0")/.." && pwd)"
-GUARD="${1:-$root/scripts/guard-bash.py}"
+here="$(cd "$(dirname "$0")" && pwd)"
+if [[ -n "${1:-}" ]]; then GUARD="$1"
+elif [[ -f "$here/guard-bash.py" ]]; then GUARD="$here/guard-bash.py"
+else GUARD="$here/../scripts/guard-bash.py"; fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
