@@ -186,6 +186,12 @@ def with_review_cfg(**kw):
     return s
 
 
+def with_review_cfg_mod(review_cfg, **kw):
+    s = mod(**kw)
+    s["config"]["review"].update(review_cfg)
+    return s
+
+
 SENSITIVE = [".github/workflows/ci.yml"]
 # the real order: harness review 10:00, fixes comment 11:00, then the human approves at 12:00
 HUMAN_OK = review(login="the-human", body="lgtm", state="APPROVED", at="2026-11-10T12:00:00Z")
@@ -215,7 +221,8 @@ CASES = [
      1, ["required check 'gitleaks': skipping", "NOT READY"]),
     # 2. code scanning
     ("no analysis for the merge commit", mod(analyses=[[]]), 1,
-     [f"no code-scanning analysis for {MERGE}", "NOT READY"]),
+     [f"no code-scanning analysis for {MERGE}", "main moved: update the branch (merge origin/main and push); "
+      "re-running CodeQL won't help", "NOT READY"]),
     ("only an analysis of an older merge commit", mod(analyses=[[OLD_MERGE]]), 1,
      [f"no code-scanning analysis for {MERGE}"]),
     ("analysis of the merge commit on page 2", mod(analyses=[[OLD_MERGE] * 100, [MERGE]]), 0, ["READY"]),
@@ -257,6 +264,36 @@ CASES = [
      mod(reviews=[review(), dict(SCANNER, at="2026-11-10T12:00:00Z")]), 0, ["READY"]),
     ("a human comment-only review after the fixes comment doesn't reset gate 5",
      mod(reviews=[review(), review(login="the-human", body="q?", at="2026-11-10T12:00:00Z")]), 0, ["READY"]),
+    # 5. no-marker fallback: anchored on the last non-bot, non-APPROVED review
+    ("fallback: a later bot review doesn't reset gate 5",
+     mod(body="plain", reviews=[review(login="someone", body="ok"), dict(SCANNER, at="2026-11-10T12:00:00Z")]),
+     0, ["READY"]),
+    ("fallback: a later human approval doesn't reset gate 5",
+     mod(body="plain", reviews=[review(login="someone", body="ok"), HUMAN_OK]), 0, ["READY"]),
+    ("fallback: a later human comment review resets gate 5",
+     mod(body="plain", reviews=[review(login="someone", body="ok"),
+                                review(login="other", body="hmm", at="2026-11-10T12:00:00Z")]),
+     1, ["no '## Review findings → fixes' comment"]),
+    ("fallback in author mode: a later bot review doesn't reset gate 5",
+     with_review_cfg_mod(dict(independence="author"),
+                         reviews=[review(login="someone", body="ok"), dict(SCANNER, at="2026-11-10T12:00:00Z")]),
+     0, ["READY"]),
+    # human changes requested blocks in every tier
+    ("standard tier: human requests changes after the fixes comment",
+     mod(reviews=[review(), review(login="the-human", state="CHANGES_REQUESTED", body="no",
+                                   at="2026-11-10T12:00:00Z")]), 1, ["changes requested by the-human", "NOT READY"]),
+    ("fast tier: human requests changes", mod(files=["docs/a.md"], reviews=[
+        review(), review(login="the-human", state="CHANGES_REQUESTED", body="no", at="2026-11-10T12:00:00Z")]),
+     1, ["changes requested by the-human"]),
+    ("sensitive tier: changes requested is NOT READY, not NEEDS HUMAN", mod(files=SENSITIVE, reviews=[
+        review(), review(login="the-human", state="CHANGES_REQUESTED", body="no", at="2026-11-10T12:00:00Z")]),
+     1, ["changes requested by the-human", "NOT READY"]),
+    ("changes requested, then approved by the same human",
+     mod(reviews=[review(), review(login="the-human", state="CHANGES_REQUESTED", body="no",
+                                   at="2026-11-10T09:00:00Z"), HUMAN_OK]), 0, ["READY"]),
+    ("a bot requesting changes doesn't block",
+     mod(reviews=[review(), review(login="some-app", bot=True, state="CHANGES_REQUESTED", body="x",
+                                   at="2026-11-10T12:00:00Z")]), 0, ["READY"]),
     # 6. risk tiers
     ("fast tier", mod(files=["docs/a.md", "README.md"]), 0, ["risk tier 'fast'", "READY"]),
     ("sensitive tier without approval", mod(files=SENSITIVE), 3,
