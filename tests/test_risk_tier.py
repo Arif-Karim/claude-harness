@@ -134,6 +134,23 @@ class TierTest(unittest.TestCase):
             risk_tier.tier_for({}, ["a"])
 
 
+class RepoConfigTest(unittest.TestCase):
+    """This repo's own harness.config.json: whoever can change the gate, its rules or its
+    tests' fake must not get a self-mergeable (non-sensitive) PR."""
+
+    def test_gate_and_contract_paths_are_sensitive(self):
+        with open(os.path.join(ROOT, "harness.config.json"), encoding="utf-8") as f:
+            cfg = json.load(f)
+        for path in ["harness/core/scripts/pr-ready.sh", "harness/core/scripts/risk-tier.py",
+                     "harness/core/scripts/branch-protection.sh", "harness/core/hooks/guard-bash.py",
+                     "scripts/guard-bash.py", "scripts/verify.sh", "hooks/hooks.json", ".claude/settings.json",
+                     ".claude/CLAUDE.md", ".github/workflows/ci.yml", "docs/contract.md", "tests/fakes/gh",
+                     "harness.config.json"]:
+            with self.subTest(path=path):
+                self.assertEqual(risk_tier.tier_for(cfg, [path]), "sensitive")
+        self.assertEqual(risk_tier.tier_for(cfg, ["docs/merge-gate.md"]), "fast")
+
+
 class CliTest(unittest.TestCase):
     def run_cli(self, cfg_text, stdin):
         with tempfile.TemporaryDirectory() as d:
