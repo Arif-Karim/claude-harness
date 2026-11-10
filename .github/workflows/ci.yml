@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: install Claude Code CLI (for `claude plugin validate`)
+        run: npm install -g @anthropic-ai/claude-code@2.1.322
+      - name: verify
+        env:
+          DISABLE_AUTOUPDATER: "1"
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+        run: scripts/verify.sh
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # scan the whole history
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+      - name: gitleaks
+        run: go run github.com/zricethezav/gitleaks/v8@v8.30.1 git . --no-banner --redact
