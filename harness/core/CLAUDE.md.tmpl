@@ -44,13 +44,16 @@ locally and push it as a **new** branch (or ask the orchestrator to force-push i
 3. Builder fixes, then posts **one** comment headed `## Review findings → fixes` mapping each
    finding to its fix (commit sha) or why not, plus the final verify numbers.
 4. Orchestrator runs `scripts/pr-ready.sh <n>`: checks green (including {{REQUIRED_CHECKS}}),
-   0 code-scanning alerts on the merge and head refs, 0 unresolved bot threads, an independent
-   review, the findings → fixes comment after the last review, and a human approval when the
-   risk tier needs one.
+   a code-scanning analysis of the current merge commit with 0 alerts on the merge and head refs,
+   0 unresolved bot threads, an independent (non-bot) review, the findings → fixes comment after
+   the last harness review, and a human approval when the risk tier needs one. It prints the
+   head sha the verdict is for.
    - Exit 1 (NOT READY): the builder fixes what the `FAIL` lines name. Any `gh` error is NOT READY.
    - Exit 3 (NEEDS HUMAN): stop and ask the human, naming the PR and its risk tier. Don't merge or
      retry. On a GitHub account shared by the human and the agents, no approval can satisfy the
      gate, so the human merges these PRs themselves.
 5. The human (or the orchestrator, if the human allowed it and the gate says READY) merges with a
-   merge commit. Remaining lanes rebase on `{{DEFAULT_BRANCH}}`.
+   merge commit. The orchestrator merges only the judged commit:
+   `HARNESS_ORCHESTRATOR=1 gh pr merge <n> --merge --match-head-commit <sha>` (the sha pr-ready
+   printed); if GitHub refuses because the head moved, re-run the gate. Remaining lanes rebase on `{{DEFAULT_BRANCH}}`.
 <!-- harness:end -->

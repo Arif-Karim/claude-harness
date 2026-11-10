@@ -48,7 +48,8 @@ in a plugin triggers a `claude plugin validate` warning.)
 - A reviewer with fresh context posts **one** review containing `<!-- harness:reviewer id=<id> -->`.
 - After fixing, the builder posts **one** comment starting `## Review findings → fixes`, mapping each
   finding to a commit sha or a reason.
-- Merge gate: `harness/core/scripts/pr-ready.sh <n>` (exit 0 READY, 1 NOT READY, 3 NEEDS HUMAN).
+- Merge gate: `harness/core/scripts/pr-ready.sh <n>` (exit 0 READY, 1 NOT READY, 3 NEEDS HUMAN; see
+  `docs/merge-gate.md`). Merge only the head sha it printed: `gh pr merge <n> --merge --match-head-commit <sha>`.
   Merge commits only.
 - `main` is protected: required checks `verify` and `gitleaks`, enforce_admins, no force pushes,
   conversation resolution.

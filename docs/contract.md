@@ -168,25 +168,29 @@ Who reads which field:
 | | |
 |---|---|
 | File | `harness/core/scripts/pr-ready.sh` → target `scripts/pr-ready.sh` |
-| Usage | `scripts/pr-ready.sh <pr-number>` (env `HARNESS_CONFIG` overrides the config path) |
+| Usage | `scripts/pr-ready.sh <pr-number>` (a positive integer without leading zeros; env `HARNESS_CONFIG` overrides the config path) |
 | Needs | `gh` (authenticated), `jq`, `git`, `python3` (for `risk-tier.py`, found next to the script) |
-| Output | One line per gate (`ok` / `FAIL` / `HUMAN`), then `READY`, `NOT READY` or `NEEDS HUMAN` |
+| Output | `head <sha>`, one line per gate (`ok` / `FAIL` / `HUMAN`), a `head <sha> (merge only this commit: …)` line, then `READY`, `NOT READY` or `NEEDS HUMAN` |
+| Data | The PR, its reviews and its comments come from REST (`pulls/<n>`, `pulls/<n>/reviews`, `issues/<n>/comments`, paginated). `gh pr view --json` is not used: it drops the `[bot]` suffix and has no user type. A **bot** is a review author with `user.type == "Bot"`. |
 | Exit | **0** READY. **1** NOT READY: a gate failed, or any gh/API call failed (the ERR trap makes it fail closed). **2** usage or config error, checked before any gh call: `requiredChecks` and `review.humanApprovalTiers` must be lists of strings, `review.independence` one of its two values, `riskTiers` valid. **3** NEEDS HUMAN: every automated gate passed, but the tier needs a human approval that is missing. |
 
 The orchestrator may merge only on exit 0, and only if the human has given merge authority.
-On exit 3 the orchestrator asks the human.
+The verdict is for the printed head sha: the gate re-reads the head at the end and is NOT READY
+if it moved. The orchestrator merges with
+`HARNESS_ORCHESTRATOR=1 gh pr merge <n> --merge --match-head-commit <sha>`, so GitHub refuses the
+merge if a commit landed after the verdict. On exit 3 the orchestrator asks the human.
 
 Gates, in order:
 1. **Checks:** `gh pr checks <n>` all pass, **and** every `requiredChecks` name exists with bucket `pass`. A required check that is missing is a failure.
-2. **Code scanning:** open alerts on `refs/pull/<n>/merge` + `refs/pull/<n>/head`, summed over every page, must be 0.
+2. **Code scanning:** at least one analysis in `code-scanning/analyses?ref=refs/pull/<n>/merge` whose `commit_sha` is the PR's current `merge_commit_sha` (none, or no merge commit: "no code-scanning analysis for <sha>", NOT READY). Then open alerts on `refs/pull/<n>/merge` + `refs/pull/<n>/head`, summed over every page, must be 0. (The alerts list is empty, not an error, for a ref nobody analysed, so the analysis check is what makes this gate mean something.)
 3. **Bot threads:** unresolved review threads (every page) whose first comment's author `__typename == "Bot"` must be 0.
-4. **Independent review:** at least one review where
-   - `review.author.login != pr.author.login`, **or**
+4. **Independent review:** at least one **non-bot** review where
+   - `review.user.login != pr.user.login`, **or**
    - (mode `author-or-marker`) the PR body has `<!-- harness:builder id=X -->` and the review body has `<!-- harness:reviewer id=Y -->` with `Y != X`.
 
    Markers exist because agents and the human often share one GitHub account. They are self-asserted, so they are a process check, not authentication.
-5. **Findings → fixes:** a PR comment whose body **starts with** `## Review findings → fixes` and whose `createdAt` is later than the latest review's `submittedAt`.
-6. **Risk tier:** `risk-tier.py` over the PR's changed files, listed with the paginated REST API (`gh pr view --json files` stops at 100), including the `previous_filename` of renames. If fewer files are listed than `changedFiles` (the API lists at most 3000), the gate fails. If the tier is in `review.humanApprovalTiers`, it needs a human whose **latest** review with state `APPROVED`, `CHANGES_REQUESTED` or `DISMISSED` is `APPROVED` (comment-only reviews don't count), whose login ≠ PR author and doesn't end in `[bot]`. Without one, exit 3. See `docs/merge-gate.md` for the shared-account flow.
+5. **Findings → fixes:** a PR comment whose body **starts with** `## Review findings → fixes` and whose `created_at` is strictly later than the last **harness review**: the latest non-bot review with a `harness:reviewer` marker, or, if there is none, the latest non-bot review that is not `APPROVED`. Bot reviews and human approvals posted afterwards don't reset it.
+6. **Risk tier:** `risk-tier.py` over the PR's changed files, listed with the paginated REST API (`gh pr view --json files` stops at 100), including the `previous_filename` of renames. If fewer files are listed than `changedFiles` (the API lists at most 3000), the gate fails. If the tier is in `review.humanApprovalTiers`, it needs a human whose **latest** review with state `APPROVED`, `CHANGES_REQUESTED` or `DISMISSED` is `APPROVED` (comment-only reviews don't count), who is not a bot and whose login ≠ PR author. Without one, exit 3. See `docs/merge-gate.md` for the shared-account flow.
 
 **Comment formats** (agents must use them exactly):
 - PR body, first line: `<!-- harness:builder id=<lane-id> -->`. Ids match `[A-Za-z0-9._-]+`.
