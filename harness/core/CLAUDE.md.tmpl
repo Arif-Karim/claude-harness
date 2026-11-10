@@ -1,0 +1,52 @@
+# {{PROJECT_NAME}}: agent instructions
+
+<!-- harness:begin (managed by the agent-harness harness-init skill; edit harness.config.json, not this block) -->
+## Agent harness
+
+This repo uses an orchestrator / builder / reviewer workflow. Hooks, CI and branch
+protection enforce the rules below; this section explains them.
+
+### Roles
+- **Orchestrator** (main session): plans, writes the contract first, splits work into
+  lanes (at most ~3 in parallel), spawns builders and reviewers, runs the merge gate.
+  It is the only agent that may use the `HARNESS_ORCHESTRATOR=1` override.
+- **Builder** (one per lane, own git worktree and branch `lane-<x>-<slug>`): implements
+  test-first, runs `scripts/verify.sh`, pushes its branch, opens one PR. Its PR body starts
+  with `<!-- harness:builder id=<lane-id> -->`.
+- **Reviewer** (fresh context, never the builder): reviews the diff for correctness,
+  security, test quality and contract adherence; posts **one** review with all findings.
+  Its review body contains `<!-- harness:reviewer id=<reviewer-id> -->` (an id other than
+  the builder's).
+- **Human**: tests the app, reviews PRs, approves `sensitive` changes, owns releases.
+
+### Commands
+- `scripts/verify.sh`: everything CI runs. **Must pass before you open a PR.**
+- `scripts/verify.sh --mutation`: adds mutation testing on packages changed vs `origin/{{DEFAULT_BRANCH}}`.
+- `scripts/pr-ready.sh <n>`: the merge gate. Exit 0 READY, 1 NOT READY, 3 NEEDS HUMAN.
+- `scripts/risk-tier.py`: prints `fast` | `standard` | `sensitive` for changed files (rules in `harness.config.json`).
+
+### Rules
+1. **TDD.** Commit the failing test (`test(x): ... (red)`), then the fix (`feat(x): ... (green)`).
+2. Coverage ≥ {{COVERAGE_MIN}}%, mutation efficacy ≥ {{MUTATION_MIN}}% on changed packages. Assert behaviour, not "no error".
+3. Every bug fix adds a row to `docs/catch-log.md` (which layer caught it, which should have).
+4. Synthetic data only. No secrets, real customer or staff data, or personal paths.
+5. Conventional commits. Merge commits only: never squash or rebase-merge.
+
+### What builders may not do (enforced by `scripts/hooks/guard-bash.py`)
+Merge PRs; push to `{{DEFAULT_BRANCH}}`; force-push (including `--force-with-lease`); push tags;
+create releases; run or toggle workflows; change repo settings, secrets or variables; any
+`gh api` write. The hook fails closed. If `{{DEFAULT_BRANCH}}` moved, rebase your branch
+locally and push it as a **new** branch (or ask the orchestrator to force-push it).
+
+### Per-PR flow
+1. Builder opens the PR (template in `.github/pull_request_template.md`).
+2. Orchestrator spawns a reviewer; reviewer posts one review.
+3. Builder fixes, then posts **one** comment headed `## Review findings → fixes` mapping each
+   finding to its fix (commit sha) or why not, plus the final verify numbers.
+4. Orchestrator runs `scripts/pr-ready.sh <n>`: checks green (including {{REQUIRED_CHECKS}}),
+   0 code-scanning alerts on the merge and head refs, 0 unresolved bot threads, an independent
+   review, the findings → fixes comment after the last review, and a human approval when the
+   risk tier needs one.
+5. The human (or the orchestrator, if the human allowed it and the gate says READY) merges with a
+   merge commit. Remaining lanes rebase on `{{DEFAULT_BRANCH}}`.
+<!-- harness:end -->

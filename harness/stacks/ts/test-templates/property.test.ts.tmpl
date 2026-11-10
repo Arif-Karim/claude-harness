@@ -1,0 +1,23 @@
+import { describe, expect, it } from "vitest";
+import fc from "fast-check";
+import { {{FUNC}} } from "{{MODULE}}";
+
+// Property-based tests with fast-check: random structured inputs, shrunk to a minimal
+// counterexample on failure. Replace the example properties with ones that hold for {{FUNC}}.
+describe("{{FUNC}} properties", () => {
+  it("never throws on any string", () => {
+    fc.assert(
+      fc.property(fc.string(), (s) => {
+        expect(() => {{FUNC}}(s)).not.toThrow();
+      }),
+    );
+  });
+
+  it("is idempotent", () => {
+    fc.assert(
+      fc.property(fc.string(), (s) => {
+        expect({{FUNC}}({{FUNC}}(s))).toEqual({{FUNC}}(s));
+      }),
+    );
+  });
+});

@@ -1,0 +1,26 @@
+package {{PACKAGE}}
+
+import "testing"
+
+// Fuzz{{FUNC}} checks properties that must hold for any input, not just the
+// examples in the unit tests. `go test` runs the seed corpus every time;
+// `go test -fuzz=Fuzz{{FUNC}} -fuzztime=30s` explores new inputs, and any
+// failing input is saved under testdata/fuzz/ and becomes a permanent test.
+func Fuzz{{FUNC}}(f *testing.F) {
+	// Seeds: typical, empty, boundary and previously-buggy inputs.
+	f.Add("")
+	f.Add("typical input")
+	f.Add("\x00\xff unicode ✓")
+
+	f.Fuzz(func(t *testing.T, in string) {
+		out, err := {{FUNC}}(in)
+		if err != nil {
+			return // invalid input is fine; panics are not
+		}
+		// Example properties; replace with ones that hold for {{FUNC}}:
+		// round trip:   Parse(Format(x)) == x
+		// idempotence:  f(f(x)) == f(x)
+		// invariants:   len(out) <= limit, output is valid UTF-8, ...
+		_ = out
+	})
+}

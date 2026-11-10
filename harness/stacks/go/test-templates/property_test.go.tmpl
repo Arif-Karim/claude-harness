@@ -1,0 +1,28 @@
+package {{PACKAGE}}
+
+import (
+	"testing"
+
+	"pgregory.net/rapid"
+)
+
+// Property-based test with rapid: generates structured inputs, shrinks any
+// failure to a minimal counterexample. Run: go test -run TestProp{{FUNC}} -rapid.checks=1000
+func TestProp{{FUNC}}(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		in := rapid.SliceOf(rapid.IntRange(-1000, 1000)).Draw(t, "in")
+
+		got := {{FUNC}}(in)
+
+		// Example properties; replace with ones that hold for {{FUNC}}:
+		if len(got) != len(in) {
+			t.Fatalf("length changed: %d -> %d", len(in), len(got))
+		}
+	})
+}
+
+// With only the standard library, testing/quick gives a lighter version:
+//
+//	if err := quick.Check(func(in []int) bool { return len({{FUNC}}(in)) == len(in) }, nil); err != nil {
+//		t.Fatal(err)
+//	}
