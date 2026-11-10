@@ -52,7 +52,9 @@ and opens a PR with the harness.
   - a reviewer independent of the builder has reviewed it;
   - a `## Review findings → fixes` comment was posted after the last review.
 
-  `sensitive` changes also need a human approval.
+  `sensitive` changes also need a human approval. When the human and the agents share one
+  GitHub account, the gate stops at exit 3 (NEEDS HUMAN) and the human merges those PRs
+  themselves: see [docs/merge-gate.md](docs/merge-gate.md).
 - **Risk tiers.** Path globs in `harness.config.json` map changes to `fast`, `standard` or `sensitive`.
 - **CI per stack** (Go, TypeScript): lint, tests with a coverage gate, mutation testing
   (gremlins, Stryker), fuzz and property tests (Go fuzzing and rapid, fast-check), CodeQL,
