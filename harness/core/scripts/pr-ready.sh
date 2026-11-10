@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # Is PR <n> ready to merge? The orchestrator's merge gate (contract: docs/contract.md, "pr-ready gate").
 #   1. every check on the latest head passed, including each harness.config.json requiredChecks entry
-#   2. 0 open code-scanning alerts on refs/pull/<n>/merge AND refs/pull/<n>/head
+#   2. a code-scanning analysis exists for the PR's current merge commit, and 0 open alerts on
+#      refs/pull/<n>/merge AND refs/pull/<n>/head
 #   3. 0 unresolved review threads started by bots
-#   4. an independent review exists (author differs from the PR author, or its
+#   4. an independent, non-bot review exists (author differs from the PR author, or its
 #      harness:reviewer marker id differs from the PR body's harness:builder marker id)
-#   5. a "## Review findings → fixes" comment was posted after the last review
+#   5. a "## Review findings → fixes" comment was posted after the last harness (marker) review
 #   6. the risk tier of every changed file (renames: old and new path) decides whether a human's
-#      latest decisive review must be APPROVED
-# Any gh/API failure prints NOT READY rather than passing silently.
+#      latest decisive review must be APPROVED (bots, by REST user.type, never count)
+# Any gh/API failure prints NOT READY rather than passing silently. The verdict is for the head
+# sha it prints; merge only that commit: gh pr merge <n> --merge --match-head-commit <sha>.
 #
 # Usage: scripts/pr-ready.sh <pr-number>
 # Env:   HARNESS_CONFIG (default: harness.config.json at the repo root)
@@ -16,7 +18,7 @@
 # shellcheck disable=SC2015 # pass() always succeeds, so A && pass || miss is safe
 set -euo pipefail
 n="${1:-}"
-[[ "$n" =~ ^[0-9]+$ ]] || { echo "usage: scripts/pr-ready.sh <pr-number>" >&2; exit 2; }
+[[ "$n" =~ ^[1-9][0-9]*$ ]] || { echo "usage: scripts/pr-ready.sh <pr-number>" >&2; exit 2; }
 here="$(cd "$(dirname "$0")" && pwd)"
 cfgerr() { echo "pr-ready: $*" >&2; exit 2; }
 if [[ -n "${HARNESS_CONFIG:-}" ]]; then
@@ -34,7 +36,10 @@ jq -e '(.review.humanApprovalTiers // ["sensitive"]) | type == "array" and all(t
 independence="$(jq -r '.review.independence // "author-or-marker"' "$config")"
 [[ "$independence" == author-or-marker || "$independence" == author ]] \
   || cfgerr "$config: review.independence must be author-or-marker or author"
-"$here/risk-tier.py" --config "$config" </dev/null >/dev/null || cfgerr "$config: invalid riskTiers"
+[[ -x "$here/risk-tier.py" ]] || cfgerr "$here/risk-tier.py not found or not executable"
+rc=0; "$here/risk-tier.py" --config "$config" </dev/null >/dev/null || rc=$?
+[[ "$rc" == 0 ]] || { [[ "$rc" == 2 ]] && cfgerr "$config: invalid riskTiers"; } \
+  || cfgerr "$here/risk-tier.py failed (exit $rc; is python3 installed?)"
 trap 'echo "  FAIL  a gh/API call or its JSON failed (line $LINENO)"; echo "NOT READY"; exit 1' ERR
 
 repo="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
@@ -44,7 +49,20 @@ pass() { printf '  ok    %s\n' "$*"; }
 miss() { printf '  FAIL  %s\n' "$*"; ok=0; }
 
 echo "PR #$n ($repo)"
-pr="$(gh pr view "$n" --json author,body,reviews,comments,changedFiles)"
+# Everything from REST: gh pr view --json drops the "[bot]" suffix and has no user type, so it
+# can't tell a bot's review from a human's.
+pull="$(gh api "repos/$repo/pulls/$n")"
+reviews="$(gh api --paginate "repos/$repo/pulls/$n/reviews?per_page=100" --jq '.[] | {login: .user.login,
+  bot: (.user.type == "Bot"), body: (.body // ""), state, at: .submitted_at}')"
+comments="$(gh api --paginate "repos/$repo/issues/$n/comments?per_page=100" --jq '.[] | {login: .user.login,
+  body: (.body // ""), at: .created_at}')"
+pr="$(printf '%s\n' "$pull" "$(jq -s . <<<"$reviews")" "$(jq -s . <<<"$comments")" \
+  | jq -s '{author: .[0].user.login, body: (.[0].body // ""), changed: .[0].changed_files,
+            reviews: .[1], comments: .[2]}')"
+head="$(jq -r '.head.sha // ""' <<<"$pull")"
+merge_sha="$(jq -r '.merge_commit_sha // ""' <<<"$pull")"
+[[ "$head" =~ ^[0-9a-f]{40}$ ]] || { echo "  FAIL  no head sha"; echo "NOT READY"; exit 1; }
+echo "head $head"
 
 # 1. checks
 if gh pr checks "$n" >/dev/null 2>&1; then pass "all checks passed"; else miss "checks not all passing (gh pr checks $n)"; fi
@@ -58,7 +76,16 @@ while IFS= read -r want; do
   [[ "$got" == pass ]] && pass "required check '$want' passed" || miss "required check '$want': $got"
 done < <(jq -r '.requiredChecks[]?' "$config")
 
-# 2. code scanning on both PR refs
+# 2. code scanning: an analysis of the current merge commit, then 0 open alerts on both PR refs
+# (the alerts list is empty, not an error, for a ref nobody analysed)
+if [[ "$merge_sha" =~ ^[0-9a-f]{40}$ ]]; then
+  analyses="$(gh api --paginate "repos/$repo/code-scanning/analyses?ref=refs/pull/$n/merge&per_page=100" \
+    --jq "[.[] | select(.commit_sha == \"$merge_sha\")] | length" | awk '{s+=$1} END {print s+0}')"
+  [[ "$analyses" -gt 0 ]] && pass "code-scanning analysis for merge commit $merge_sha" \
+    || miss "no code-scanning analysis for $merge_sha (refs/pull/$n/merge)"
+else
+  miss "no merge commit for PR #$n (conflicts, or GitHub has not computed it yet)"
+fi
 alerts=0
 for ref in "refs/pull/$n/merge" "refs/pull/$n/head"; do
   c="$(gh api --paginate "repos/$repo/code-scanning/alerts?ref=$ref&state=open&per_page=100" --jq length \
@@ -78,27 +105,33 @@ bots="$(gh api graphql --paginate -F owner="$owner" -F name="$name" -F n="$n" -f
   | awk '{s+=$1} END {print s+0}')"
 [[ "$bots" == 0 ]] && pass "0 unresolved bot review threads" || miss "$bots unresolved bot review threads"
 
-# 4. independent review
-independent="$(jq --arg mode "$independence" '
-  def mid($role): (capture("<!-- harness:" + $role + " id=(?<id>[A-Za-z0-9._-]+) -->") | .id) // null;
-  .author.login as $pa | (.body // "" | mid("builder")) as $b
-  | [.reviews[] | select(
-      (.author.login != $pa)
+# 4. independent review (bots never count: code scanning, Copilot, Actions...)
+# shellcheck disable=SC2016 # jq variables, not shell
+mid='def mid($role): (capture("<!-- harness:" + $role + " id=(?<id>[A-Za-z0-9._-]+) -->") | .id) // null;'
+independent="$(jq --arg mode "$independence" "$mid"'
+  .author as $pa | (.body | mid("builder")) as $b
+  | [.reviews[] | select(.bot | not) | select(
+      (.login != $pa)
       or ($mode == "author-or-marker" and $b != null
-          and ((.body // "" | mid("reviewer")) as $r | $r != null and $r != $b)))]
+          and ((.body | mid("reviewer")) as $r | $r != null and $r != $b)))]
   | length' <<<"$pr")"
 [[ "$independent" -gt 0 ]] && pass "independent review present ($independence)" \
   || miss "no independent review (reviewer must differ from the builder: $independence)"
 
-# 5. findings → fixes after the last review
-last_review="$(jq -r '[.reviews[].submittedAt] | max // ""' <<<"$pr")"
+# 5. findings → fixes after the last harness review: the last non-bot review with a reviewer
+# marker, or without any, the last non-bot review that is not an approval. Human approvals and
+# bot reviews posted later don't reset it.
+last_review="$(jq -r "$mid"'
+  [.reviews[] | select(.bot | not)] as $h
+  | ([$h[] | select((.body | mid("reviewer")) != null)] | if length > 0 then . else [$h[] | select(.state != "APPROVED")] end)
+  | map(.at) | max // ""' <<<"$pr")"
 if [[ -z "$last_review" ]]; then
   miss "no review posted"
 else
   final="$(jq --arg t "$last_review" \
-    '[.comments[] | select(.createdAt > $t and (.body | test("^## Review findings → fixes")))] | length' <<<"$pr")"
-  [[ "$final" -gt 0 ]] && pass "'## Review findings → fixes' comment after the last review" \
-    || miss "no '## Review findings → fixes' comment after the last review"
+    '[.comments[] | select(.at > $t and (.body | test("^## Review findings → fixes")))] | length' <<<"$pr")"
+  [[ "$final" -gt 0 ]] && pass "'## Review findings → fixes' comment after the last review ($last_review)" \
+    || miss "no '## Review findings → fixes' comment after the last review ($last_review)"
 fi
 
 # 6. risk tier → human approval
@@ -106,7 +139,7 @@ fi
 # old path of renames, so moving a file out of a sensitive dir still counts as sensitive.
 files="$(gh api --paginate "repos/$repo/pulls/$n/files?per_page=100" --jq '.[] | {filename, previous_filename}')"
 listed="$(jq -s length <<<"$files")"
-changed="$(jq '.changedFiles' <<<"$pr")"
+changed="$(jq '.changed' <<<"$pr")"
 [[ "$listed" == "$changed" ]] && pass "listed all $changed changed files" \
   || miss "listed $listed of $changed changed files (the API lists at most 3000)"
 tier="$(jq -rs '.[] | .filename, (.previous_filename // empty)' <<<"$files" | "$here/risk-tier.py" --config "$config")"
@@ -114,17 +147,23 @@ needs_human="$(jq --arg t "$tier" '(.review.humanApprovalTiers // ["sensitive"])
 human=0
 if [[ "$needs_human" == true ]]; then
   # Each human's latest decisive review (APPROVED / CHANGES_REQUESTED / DISMISSED) counts;
-  # comment-only reviews do not cancel an approval.
-  human="$(jq '.author.login as $pa
-    | [.reviews[] | select(.state != "COMMENTED" and .state != "PENDING")
-       | select((.author.login // "") as $l | $l != "" and $l != $pa and ($l | endswith("[bot]") | not))]
-    | group_by(.author.login) | map(max_by(.submittedAt)) | map(select(.state == "APPROVED")) | length' <<<"$pr")"
+  # comment-only reviews do not cancel an approval. Bots (REST user.type) never count.
+  human="$(jq '.author as $pa
+    | [.reviews[] | select(.bot | not) | select(.state != "COMMENTED" and .state != "PENDING")
+       | select((.login // "") as $l | $l != "" and $l != $pa)]
+    | group_by(.login) | map(max_by(.at)) | map(select(.state == "APPROVED")) | length' <<<"$pr")"
   [[ "$human" -gt 0 ]] && pass "risk tier '$tier': human approval present" \
     || echo "  HUMAN risk tier '$tier' needs an APPROVED review from a human"
 else
   pass "risk tier '$tier': no human approval required"
 fi
 
+# the verdict is only for the commit it judged
+head_now="$(gh api "repos/$repo/pulls/$n" --jq .head.sha)"
+[[ "$head_now" == "$head" ]] && pass "head unchanged during the run ($head)" \
+  || miss "head moved from $head to $head_now during the run; re-run the gate"
+
+echo "head $head (merge only this commit: gh pr merge $n --merge --match-head-commit $head)"
 if [[ "$ok" != 1 ]]; then echo "NOT READY"; exit 1; fi
 if [[ "$needs_human" == true && "$human" == 0 ]]; then echo "NEEDS HUMAN"; exit 3; fi
 echo "READY"

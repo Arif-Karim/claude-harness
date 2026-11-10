@@ -55,6 +55,22 @@
       {
         "glob": "harness.config.json",
         "tier": "sensitive"
+      },
+      {
+        "glob": "harness/core/scripts/**",
+        "tier": "sensitive"
+      },
+      {
+        "glob": "scripts/**",
+        "tier": "sensitive"
+      },
+      {
+        "glob": "docs/contract.md",
+        "tier": "sensitive"
+      },
+      {
+        "glob": "tests/fakes/**",
+        "tier": "sensitive"
       }
     ]
   },
