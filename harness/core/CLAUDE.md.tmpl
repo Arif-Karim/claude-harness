@@ -47,6 +47,10 @@ locally and push it as a **new** branch (or ask the orchestrator to force-push i
    0 code-scanning alerts on the merge and head refs, 0 unresolved bot threads, an independent
    review, the findings → fixes comment after the last review, and a human approval when the
    risk tier needs one.
+   - Exit 1 (NOT READY): the builder fixes what the `FAIL` lines name. Any `gh` error is NOT READY.
+   - Exit 3 (NEEDS HUMAN): stop and ask the human, naming the PR and its risk tier. Don't merge or
+     retry. On a GitHub account shared by the human and the agents, no approval can satisfy the
+     gate, so the human merges these PRs themselves.
 5. The human (or the orchestrator, if the human allowed it and the gate says READY) merges with a
    merge commit. Remaining lanes rebase on `{{DEFAULT_BRANCH}}`.
 <!-- harness:end -->

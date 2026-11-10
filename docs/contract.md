@@ -48,6 +48,7 @@ hooks/hooks.json                  plugin-level guard (--require-config mode)
 scripts/guard-bash.py             THE guard (canonical); this repo and the plugin hook run it
 scripts/verify.sh                 this repo's verify
 tests/                            tests for the harness itself (table test, python unittests)
+tests/fakes/gh                    fake gh for the merge-gate tests (routes file, --jq, --paginate, call log)
 harness/core/                     language-agnostic files harness-init copies into a target
 harness/stacks/{go,ts}/           per-stack fragments
 docs/contract.md, docs/adr/       this file, decisions
@@ -170,22 +171,22 @@ Who reads which field:
 | Usage | `scripts/pr-ready.sh <pr-number>` (env `HARNESS_CONFIG` overrides the config path) |
 | Needs | `gh` (authenticated), `jq`, `git`, `python3` (for `risk-tier.py`, found next to the script) |
 | Output | One line per gate (`ok` / `FAIL` / `HUMAN`), then `READY`, `NOT READY` or `NEEDS HUMAN` |
-| Exit | **0** READY. **1** NOT READY: a gate failed, or any gh/API call failed (the ERR trap makes it fail closed). **2** usage or config error. **3** NEEDS HUMAN: every automated gate passed, but the tier needs a human approval that is missing. |
+| Exit | **0** READY. **1** NOT READY: a gate failed, or any gh/API call failed (the ERR trap makes it fail closed). **2** usage or config error, checked before any gh call: `requiredChecks` and `review.humanApprovalTiers` must be lists of strings, `review.independence` one of its two values, `riskTiers` valid. **3** NEEDS HUMAN: every automated gate passed, but the tier needs a human approval that is missing. |
 
 The orchestrator may merge only on exit 0, and only if the human has given merge authority.
 On exit 3 the orchestrator asks the human.
 
 Gates, in order:
 1. **Checks:** `gh pr checks <n>` all pass, **and** every `requiredChecks` name exists with bucket `pass`. A required check that is missing is a failure.
-2. **Code scanning:** open alerts on `refs/pull/<n>/merge` + `refs/pull/<n>/head`, summed, must be 0.
-3. **Bot threads:** unresolved review threads whose first comment's author `__typename == "Bot"` must be 0.
+2. **Code scanning:** open alerts on `refs/pull/<n>/merge` + `refs/pull/<n>/head`, summed over every page, must be 0.
+3. **Bot threads:** unresolved review threads (every page) whose first comment's author `__typename == "Bot"` must be 0.
 4. **Independent review:** at least one review where
    - `review.author.login != pr.author.login`, **or**
    - (mode `author-or-marker`) the PR body has `<!-- harness:builder id=X -->` and the review body has `<!-- harness:reviewer id=Y -->` with `Y != X`.
 
    Markers exist because agents and the human often share one GitHub account. They are self-asserted, so they are a process check, not authentication.
 5. **Findings → fixes:** a PR comment whose body **starts with** `## Review findings → fixes` and whose `createdAt` is later than the latest review's `submittedAt`.
-6. **Risk tier:** `risk-tier.py` over the PR's changed files. If the tier is in `review.humanApprovalTiers`, it needs a review with `state == APPROVED`, author ≠ PR author, and author not ending in `[bot]`. Without one, exit 3.
+6. **Risk tier:** `risk-tier.py` over the PR's changed files, listed with the paginated REST API (`gh pr view --json files` stops at 100), including the `previous_filename` of renames. If fewer files are listed than `changedFiles` (the API lists at most 3000), the gate fails. If the tier is in `review.humanApprovalTiers`, it needs a human whose **latest** review with state `APPROVED`, `CHANGES_REQUESTED` or `DISMISSED` is `APPROVED` (comment-only reviews don't count), whose login ≠ PR author and doesn't end in `[bot]`. Without one, exit 3. See `docs/merge-gate.md` for the shared-account flow.
 
 **Comment formats** (agents must use them exactly):
 - PR body, first line: `<!-- harness:builder id=<lane-id> -->`. Ids match `[A-Za-z0-9._-]+`.
@@ -247,7 +248,8 @@ What each tier means:
 | | `allow_deletions: false` |
 | | `required_conversation_resolution: true` |
 | | Then it prints the resulting settings as JSON. |
-| Exit | **0** applied, or `--dry-run` printed the payload. **1** gh/API failure. **2** usage or config error, or no checks. **3** refused because `HARNESS_ORCHESTRATOR=1` is not set (except with `--dry-run`). |
+| Config | `HARNESS_CONFIG` if set (it must exist), else `harness.config.json` at the repo root (optional). |
+| Exit | **0** applied, or `--dry-run` printed `branch: <b>` and then the payload. **1** gh/API failure. **2** usage or config error (including an option without a value, or `requiredChecks` that is not a list of strings), or no checks. **3** refused because `HARNESS_ORCHESTRATOR=1` is not set exactly (except with `--dry-run`). |
 
 ## 10. verify and stacks
 
